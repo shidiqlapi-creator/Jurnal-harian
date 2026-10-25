@@ -115,6 +115,11 @@
 
             <!-- SECTION 1: DASHBOARD -->
             <div id="sec-dashboard" class="space-y-6 tab-content">
+                <div class="p-5 rounded-3xl bg-gradient-to-br from-indigo-600/20 to-slate-900 border border-indigo-500/20 flex gap-3 items-start">
+                    <i class="ph-bold ph-quotes text-2xl text-indigo-400 mt-0.5"></i>
+                    <div class="flex-1"><span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Kata penyemangat hari ini</span><p id="dashQuote" class="text-sm text-slate-200 mt-1 leading-relaxed"></p></div>
+                    <button data-quote="shuffle" aria-label="Acak kutipan lain" title="Acak lagi" class="p-2 rounded-xl bg-slate-800 text-indigo-300"><i class="ph-bold ph-shuffle text-lg"></i></button>
+                </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div class="p-5 rounded-3xl bg-gradient-to-br from-indigo-600 to-indigo-800 text-white shadow-xl space-y-2">
                         <span class="text-xs font-medium text-indigo-200">Mood Pagi Hari Ini</span>
@@ -303,6 +308,11 @@
                     <button id="btnImport" class="px-4 py-2 bg-slate-800 border border-slate-700 text-white rounded-xl text-xs font-semibold">Pulihkan</button>
                 </div>
                 <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
+                    <h3 class="font-bold text-white">Kata penyemangat</h3>
+                    <p class="text-xs text-slate-400">Kutipan di Dashboard dipilih acak dari daftar bawaan dan daftar Anda, tanpa berulang sampai semuanya pernah tampil.</p>
+                    <div id="quoteBox" class="space-y-3"></div>
+                </div>
+                <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
                     <h3 class="font-bold text-white">Tautan Jurnal Baca (Baca Buku)</h3>
                     <p class="text-xs text-slate-400">Jurnal ini hanya membaca catatan bacaan dari Baca Buku. Hari dengan halaman terbaca otomatis mencentang kebiasaan yang dipilih. Data Baca Buku tidak pernah diubah. Jika semua catatan bacaan suatu hari dihapus di Baca Buku, jumlah halaman dan centang otomatis hari itu ikut dihapus; centang yang Anda isi sendiri tetap.</p>
                     <div id="bacaBox" class="space-y-2"></div>
@@ -370,7 +380,7 @@
         const DEFAULT_IBADAH = ["Subuh", "Dzuhur", "Ashar", "Maghrib", "Isya", "Dzikir / Doa"];
         const DEFAULT_HABITS = ["Membaca Buku", "Olahraga (20 Menit)", "Minum Air 2L", "Tidur Cukup"];
 
-        let appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku" };
+        let appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] };
         const LS = "jurnal_harian_state", LS_OLD = "jurnal-harian-v1";
         const $ = id => document.getElementById(id);
         const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -400,6 +410,10 @@
                 habitsList: Array.isArray(s.habitsList) ? s.habitsList.map(String) : [...DEFAULT_HABITS],
                 entries: ents,
                 bacaOn: s.bacaOn !== false, bacaHabit: typeof s.bacaHabit === "string" ? s.bacaHabit : "Membaca Buku",
+                customQuotes: Array.isArray(s.customQuotes) ? s.customQuotes.map(x => String(x).trim()).filter(Boolean) : [],
+                quoteBuiltin: s.quoteBuiltin !== false,
+                quoteDay: (s.quoteDay && typeof s.quoteDay.text === "string") ? s.quoteDay : null,
+                quoteSeen: Array.isArray(s.quoteSeen) ? s.quoteSeen.map(String) : [],
                 syncOn: !!s.syncOn, syncId: typeof s.syncId === "string" ? s.syncId : ""
             };
         }
@@ -425,7 +439,7 @@
         /* ---------- simpan ---------- */
         let bacaStatus = "Baca Buku: menyambung...", bacaUnsub = null, lastSave = "Tersimpan di perangkat";
         function setStatus(t) { if (t) lastSave = t; $("cloudStatus").textContent = lastSave; $("syncBadge").textContent = bacaStatus + (appState.syncOn ? " | Cloud jurnal: aktif" : ""); }
-        function cloudPayload() { return { data: JSON.stringify({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries }), ts: Date.now() }; }
+        function cloudPayload() { return { data: JSON.stringify({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries, customQuotes: appState.customQuotes }), ts: Date.now() }; }
         async function pushCloud() {
             if (!appState.syncOn || !db || !appState.syncId) return;
             try { await db.collection("jurnal_harian").doc(appState.syncId).set(cloudPayload()); setStatus("Tersinkron ke cloud"); }
@@ -447,7 +461,7 @@
                 if (snap.exists) {
                     const r = snap.data(), c = normalize(JSON.parse(r.data));
                     if (!askReplace || confirm("Data cloud ditemukan.\nOK = pakai data cloud (data di perangkat ini diganti).\nBatal = timpa cloud dengan data perangkat ini.")) {
-                        appState.ibadahList = c.ibadahList; appState.habitsList = c.habitsList; appState.entries = c.entries; save(); go(view); return;
+                        appState.ibadahList = c.ibadahList; appState.habitsList = c.habitsList; appState.entries = c.entries; if (c.customQuotes.length) appState.customQuotes = c.customQuotes; save(); go(view); return;
                     }
                 }
                 await pushCloud();
@@ -507,9 +521,80 @@
             window.scrollTo({ top: 0 });
         }
 
+        let QUOTES = [
+            "Langkah kecil yang dilakukan setiap hari mengalahkan niat besar yang hanya direncanakan.",
+            "Kamu tidak harus sempurna hari ini, cukup lebih baik dari kemarin.",
+            "Konsistensi lebih kuat daripada motivasi sesaat.",
+            "Mulai saja dulu. Semangat biasanya menyusul setelah langkah pertama.",
+            "Satu centang hari ini adalah satu suara untuk dirimu yang kamu inginkan.",
+            "Hari yang berat tetap layak dicatat. Itu juga bagian dari perjalanan.",
+            "Kebiasaan baik dibangun dari hari-hari yang tidak terasa istimewa.",
+            "Jangan putus dua hari berturut-turut. Satu hari terlewat bukan akhir segalanya.",
+            "Yang kamu ulang setiap hari pelan-pelan menjadi dirimu.",
+            "Istirahat yang cukup juga bagian dari kerja keras.",
+            "Syukur membuat hal sederhana terasa cukup.",
+            "Tenang dulu, lalu pilih satu hal terpenting untuk dikerjakan sekarang.",
+            "Kemajuan yang lambat tetap kemajuan.",
+            "Tulis apa yang berjalan baik. Otak kita sering lupa hal-hal baik.",
+            "Waktu terbaik untuk memperbaiki kebiasaan adalah hari ini, bukan awal bulan depan.",
+            "Kalau terasa berat, kecilkan targetnya, bukan niatnya.",
+            "Disiplin adalah cara merawat dirimu yang akan datang.",
+            "Kamu sudah sampai sejauh ini. Lanjutkan dengan langkah yang sama kecilnya.",
+            "Jangan bandingkan bab pertamamu dengan bab kesepuluh orang lain.",
+            "Ibadah yang dijaga rutin menenangkan hari-hari yang ramai.",
+            "Satu halaman hari ini lebih baik daripada seratus halaman yang hanya direncanakan.",
+            "Pelajari polamu: apa yang memicu hari buruk, dan apa yang membuat hari baik.",
+            "Mengakui kekeliruan hari ini adalah awal dari perbaikan besok.",
+            "Air putih, tidur cukup, dan jalan kaki sebentar sering lebih ampuh dari yang dikira.",
+            "Fokus pada prosesnya, hasil akan mengikuti dengan sabar.",
+            "Tidak ada hari yang terlalu sibuk untuk lima menit kebiasaan baik.",
+            "Ketika menunda terasa nyaman, kerjakan dua menit saja.",
+            "Hari ini tidak harus produktif, cukup jujur pada diri sendiri.",
+            "Bersabarlah dengan dirimu seperti kamu bersabar pada orang yang kamu sayangi.",
+            "Rutinitas yang sederhana lebih bertahan daripada rencana yang megah.",
+            "Setiap catatan yang kamu tulis adalah bukti bahwa kamu peduli pada perubahanmu.",
+            "Mulai dari yang paling mudah, lalu biarkan momentum bekerja.",
+            "Kekuatan sebenarnya terlihat saat kamu tetap melangkah di hari yang biasa-biasa saja.",
+            "Doa dan usaha berjalan berdampingan.",
+            "Hentikan satu kebiasaan buruk dengan menggantinya dengan kebiasaan baik, bukan dengan ruang kosong.",
+            "Rayakan kemenangan kecil. Mereka yang menopang kemenangan besar.",
+            "Kamu boleh lelah. Istirahatlah, lalu kembali pelan-pelan.",
+            "Yang penting bukan seberapa cepat, tetapi seberapa lama kamu bertahan.",
+            "Malam ini evaluasi singkat, besok perbaikan kecil.",
+            "Hari baru, halaman baru. Isi dengan satu hal yang kamu banggakan.",
+            "Orang yang berubah adalah orang yang mencatat, merenung, lalu mencoba lagi."
+        ];
+        function quotePool() { const p = []; if (appState.quoteBuiltin) p.push(...QUOTES); p.push(...appState.customQuotes); return p.length ? p : QUOTES.slice(); }
+        // Acak tanpa mengulang sampai semua kutipan sudah tampil; tetap sama sepanjang hari kecuali ditekan "Acak lagi"
+        function pickQuote(force) {
+            const pool = quotePool(), cur = appState.quoteDay;
+            if (!force && cur && cur.date === TODAY && pool.includes(cur.text)) return cur.text;
+            let seen = appState.quoteSeen.filter(t => pool.includes(t)), cand = pool.filter(t => !seen.includes(t));
+            if (!cand.length) { seen = []; cand = pool.filter(t => !cur || t !== cur.text); if (!cand.length) cand = pool; }
+            const t = cand[Math.floor(Math.random() * cand.length)];
+            seen.push(t); appState.quoteSeen = seen; appState.quoteDay = { date: TODAY, text: t }; save();
+            return t;
+        }
+        const showQuote = force => { $("dashQuote").textContent = "\u201C" + pickQuote(force) + "\u201D"; };
+        const dayNum = k => { const p = k.split("-"); return Math.floor(Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000); };
+        // Kutipan dimuat dari quotes.json (bisa diedit tanpa mengubah kode). Daftar bawaan di atas jadi cadangan.
+        function loadQuotes() {
+            fetch("quotes.json", { cache: "no-cache" }).then(r => r.ok ? r.json() : Promise.reject()).then(d => {
+                const list = (d && Array.isArray(d.quotes) ? d.quotes : []).map(x => String(x).trim()).filter(Boolean);
+                if (list.length) { QUOTES = list; if (view === "dashboard") showQuote(false); }
+            }).catch(() => {});
+        }
+        // Ganti hari otomatis tanpa perlu membuka ulang aplikasi
+        function checkDay() {
+            const n = ymd(new Date()); if (n === TODAY) return;
+            const was = curDate === TODAY; TODAY = n; if (was) curDate = TODAY;
+            $("currentDateStr").textContent = fmtLong(TODAY);
+            const a = document.activeElement; if (!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) RENDERS()[view]();
+        }
         /* ---------- dashboard ---------- */
         function renderDashboard() {
             const e = E(TODAY) || {}, ip = ibPct(TODAY), hp = hbPct(TODAY);
+            showQuote(false);
             $("dashMoodMorning").textContent = e.moodMorning ? MOODS[e.moodMorning] : "-";
             $("dashNiatPagi").textContent = e.niatPagi || "Belum ada catatan niat";
             $("dashIbadahScore").textContent = Math.round(ip * 100) + "%";
@@ -586,6 +671,12 @@
         function download(name, text, type) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
         function renderSettings() {
             const b = "px-4 py-2 rounded-xl text-xs font-semibold";
+            $("quoteBox").innerHTML = `<label class="flex items-center gap-3 text-sm"><input type="checkbox" id="quoteBuiltinChk" ${appState.quoteBuiltin ? "checked" : ""} class="w-5 h-5 accent-indigo-500"> Pakai kutipan bawaan (${QUOTES.length} kutipan)</label>
+                <label class="block text-xs font-semibold text-slate-400" for="newQuote">Tambah kutipan sendiri (satu baris satu kutipan)</label>
+                <textarea id="newQuote" rows="3" placeholder="Tulis kutipan atau pesan semangat untuk dirimu..." class="w-full px-3 py-2 rounded-xl border border-slate-800 bg-slate-800 text-sm text-white"></textarea>
+                <button data-quote="add" class="${b} bg-indigo-600 text-white">Tambah ke daftar</button>
+                <p class="text-xs text-slate-400">Kutipan Anda: ${appState.customQuotes.length}</p>
+                ${appState.customQuotes.map((q, i) => `<div class="flex items-start justify-between gap-2 p-3 rounded-xl bg-slate-800/60 border border-slate-800"><span class="text-sm">${esc(q)}</span><button data-qdel="${i}" aria-label="Hapus kutipan" class="text-rose-400 px-2"><i class="ph-bold ph-trash"></i></button></div>`).join("")}`;
             $("bacaBox").innerHTML = `<p class="text-xs text-slate-300">Status: <b class="${appState.bacaOn ? "text-emerald-400" : "text-slate-400"}">${esc(bacaStatus)}</b></p>
                 <label class="block text-xs font-semibold text-slate-400" for="bacaHabitSel">Kebiasaan yang dicentang otomatis</label>
                 <select id="bacaHabitSel" class="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-800 text-sm text-white"><option value="">— Jangan centang otomatis —</option>${appState.habitsList.map(n => `<option value="${esc(n)}" ${n === appState.bacaHabit ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
@@ -607,11 +698,18 @@
 
         /* ---------- event ---------- */
         document.addEventListener("click", e => {
-            const t = e.target.closest("[data-nav],[data-edit],[data-del],[data-sync],[data-baca]"); if (!t) return;
+            const t = e.target.closest("[data-nav],[data-edit],[data-del],[data-sync],[data-baca],[data-quote],[data-qdel]"); if (!t) return;
             const d = t.dataset;
             if (d.nav) { if (d.nav === "today") curDate = TODAY; return go(d.nav); }
             if (d.edit) { curDate = d.edit; return go("today"); }
             if (d.del) { const key = d.del === "ibadah" ? "ibadahList" : "habitsList"; if (confirm('Hapus "' + d.name + '" dari daftar? Catatan lama tetap tersimpan.')) { appState[key] = appState[key].filter(n => n !== d.name); save(); renderManage(); } return; }
+            if (d.quote === "shuffle") return showQuote(true);
+            if (d.quote === "add") {
+                const add = $("newQuote").value.split("\n").map(x => x.trim().slice(0, 300)).filter(x => x && !appState.customQuotes.includes(x));
+                if (!add.length) return $("newQuote").focus();
+                appState.customQuotes.push(...new Set(add)); save(); return renderSettings();
+            }
+            if (d.qdel !== undefined) { const q = appState.customQuotes[+d.qdel]; if (q !== undefined && confirm("Hapus kutipan ini dari daftar?")) { appState.customQuotes.splice(+d.qdel, 1); save(); renderSettings(); } return; }
             if (d.sync) return syncAction(d.sync);
             if (d.baca) {
                 if (d.baca === "resync" && !confirm("Centang otomatis akan diterapkan lagi ke semua hari bacaan, termasuk hari yang pernah Anda batalkan. Lanjutkan?")) return;
@@ -625,6 +723,7 @@
             if (t.dataset.chk) { const e = W(curDate); e[t.dataset.chk][t.dataset.name] = t.checked; if (e.bacaAuto === t.dataset.name) delete e.bacaAuto; save(); } // diubah manual: bukan lagi centang otomatis
             if (t.id === "inputMoodMorning") { W(curDate).moodMorning = t.value; save(); }
             if (t.id === "inputMoodNight") { W(curDate).moodNight = t.value; save(); }
+            if (t.id === "quoteBuiltinChk") { if (!t.checked && !appState.customQuotes.length) { alert("Tambahkan kutipan sendiri dulu sebelum mematikan kutipan bawaan."); t.checked = true; return; } appState.quoteBuiltin = t.checked; appState.quoteDay = null; save(); renderSettings(); }
             if (t.id === "bacaHabitSel") { appState.bacaHabit = t.value; Object.values(appState.entries).forEach(x => { delete x.bacaApplied; }); save(); bacaStart(); }
             if (t.id === "todayDatePick" && t.value && t.value <= TODAY) { curDate = t.value; renderToday(); }
             if (t.id === "histRange" || t.id === "histMood") renderHistory();
@@ -642,7 +741,7 @@
         $("btnAddHabit").onclick = () => addItem("newHabitName", "habitsList");
         $("newIbadahName").addEventListener("keydown", e => { if (e.key === "Enter") addItem("newIbadahName", "ibadahList"); });
         $("newHabitName").addEventListener("keydown", e => { if (e.key === "Enter") addItem("newHabitName", "habitsList"); });
-        $("btnExportJSON").onclick = () => download("jurnal-harian-" + TODAY + ".json", JSON.stringify({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries }), "application/json");
+        $("btnExportJSON").onclick = () => download("jurnal-harian-" + TODAY + ".json", JSON.stringify({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries, customQuotes: appState.customQuotes }), "application/json");
         $("btnExportCSV").onclick = () => {
             const c = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"', names = appState.ibadahList.concat(appState.habitsList);
             const head = ["tanggal", "mood_pagi", "niat", "mood_malam", "syukur", "persen_ibadah", "persen_habit", "halaman_baca"].concat(names);
@@ -650,14 +749,17 @@
             download("jurnal-harian-" + TODAY + ".csv", [head].concat(rows).map(r => r.map(c).join(",")).join("\n"), "text/csv");
         };
         $("btnImport").onclick = () => {
-            try { const o = JSON.parse($("impTxt").value); if (!o || typeof o.entries !== "object" || !Array.isArray(o.ibadahList)) throw 0; if (!confirm("Data saat ini akan diganti dengan data impor. Lanjutkan?")) return; const keep = { syncOn: appState.syncOn, syncId: appState.syncId, bacaOn: appState.bacaOn, bacaHabit: appState.bacaHabit }; appState = Object.assign(normalize(o), keep); save(); $("impTxt").value = ""; alert("Data berhasil dipulihkan."); renderSettings(); }
+            try { const o = JSON.parse($("impTxt").value); if (!o || typeof o.entries !== "object" || !Array.isArray(o.ibadahList)) throw 0; if (!confirm("Data saat ini akan diganti dengan data impor. Lanjutkan?")) return; const keep = { syncOn: appState.syncOn, syncId: appState.syncId, bacaOn: appState.bacaOn, bacaHabit: appState.bacaHabit, quoteBuiltin: appState.quoteBuiltin, quoteDay: appState.quoteDay, quoteSeen: appState.quoteSeen }; appState = Object.assign(normalize(o), keep); save(); $("impTxt").value = ""; alert("Data berhasil dipulihkan."); renderSettings(); }
             catch (e) { alert("JSON tidak valid atau formatnya tidak sesuai."); }
         };
-        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku" }; save(); bacaStart(); go("dashboard"); } };
+        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] }; save(); bacaStart(); go("dashboard"); } };
 
         setStatus("Tersimpan di perangkat");
         go("dashboard");
         bacaStart();
+        loadQuotes();
+        setInterval(checkDay, 60000);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDay(); });
         if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
             window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(e => console.log("SW gagal:", e)));
         }
