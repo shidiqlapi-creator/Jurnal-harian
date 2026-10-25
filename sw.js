@@ -1,5 +1,5 @@
 /* Service worker HabitLog: shell offline + cache CDN. Naikkan VERSION saat index.html diubah. */
-const VERSION = "habitlog-v1";
+const VERSION = "habitlog-v2";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon.svg"];
 const SKIP = ["firestore.googleapis.com", "firebaseio.com", "identitytoolkit.googleapis.com", "securetoken.googleapis.com"];
 
