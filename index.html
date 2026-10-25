@@ -304,7 +304,7 @@
                 </div>
                 <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
                     <h3 class="font-bold text-white">Tautan Jurnal Baca (Baca Buku)</h3>
-                    <p class="text-xs text-slate-400">Jurnal ini hanya membaca catatan bacaan dari Baca Buku. Hari dengan halaman terbaca otomatis mencentang kebiasaan yang dipilih. Data Baca Buku tidak pernah diubah.</p>
+                    <p class="text-xs text-slate-400">Jurnal ini hanya membaca catatan bacaan dari Baca Buku. Hari dengan halaman terbaca otomatis mencentang kebiasaan yang dipilih. Data Baca Buku tidak pernah diubah. Jika semua catatan bacaan suatu hari dihapus di Baca Buku, jumlah halaman dan centang otomatis hari itu ikut dihapus; centang yang Anda isi sendiri tetap.</p>
                     <div id="bacaBox" class="space-y-2"></div>
                 </div>
                 <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
@@ -457,13 +457,25 @@
         const RENDERS = () => ({ dashboard: renderDashboard, today: renderToday, history: renderHistory, habits: renderManage, settings: renderSettings });
         /* ---------- tautan ke jurnal baca (Baca Buku), hanya membaca users/default_user ---------- */
         function bacaApply(parsed) {
-            const logs = Array.isArray(parsed && parsed.logs) ? parsed.logs : [], pages = {};
-            logs.forEach(l => { if (!l || !/^\d{4}-\d{2}-\d{2}$/.test(l.date)) return; const n = (+l.to) - (+l.from) + 1; if (isFinite(n) && n > 0) pages[l.date] = (pages[l.date] || 0) + n; });
+            if (!parsed || !Array.isArray(parsed.logs)) throw new Error("format");
+            const pages = {};
+            parsed.logs.forEach(l => { if (!l || !/^\d{4}-\d{2}-\d{2}$/.test(l.date)) return; const n = (+l.to) - (+l.from) + 1; if (isFinite(n) && n > 0) pages[l.date] = (pages[l.date] || 0) + n; });
             const name = appState.bacaHabit, ok = !!name && appState.habitsList.includes(name); let changed = false;
             Object.keys(pages).forEach(k => {
                 const e = W(k);
                 if (e.bacaPages !== pages[k]) { e.bacaPages = pages[k]; changed = true; }
-                if (ok && !e.bacaApplied) { e.bacaApplied = true; e.habits[name] = true; changed = true; }
+                if (ok && !e.bacaApplied) {
+                    e.bacaApplied = true; changed = true;
+                    if (!e.habits[name]) { e.habits[name] = true; e.bacaAuto = name; } // hanya centang otomatis yang kelak boleh dicabut
+                }
+            });
+            // hari yang semua catatan bacanya sudah dihapus di Jurnal Baca
+            Object.keys(appState.entries).forEach(k => {
+                const e = appState.entries[k];
+                if (pages[k] || (e.bacaPages === undefined && !e.bacaApplied && !e.bacaAuto)) return;
+                delete e.bacaPages; delete e.bacaApplied;
+                if (e.bacaAuto) { if (e.habits && e.habits[e.bacaAuto]) e.habits[e.bacaAuto] = false; delete e.bacaAuto; }
+                changed = true;
             });
             if (changed) { save(); const a = document.activeElement; if (!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) RENDERS()[view](); }
         }
@@ -610,7 +622,7 @@
         });
         document.addEventListener("change", e => {
             const t = e.target;
-            if (t.dataset.chk) { W(curDate)[t.dataset.chk][t.dataset.name] = t.checked; save(); }
+            if (t.dataset.chk) { const e = W(curDate); e[t.dataset.chk][t.dataset.name] = t.checked; if (e.bacaAuto === t.dataset.name) delete e.bacaAuto; save(); } // diubah manual: bukan lagi centang otomatis
             if (t.id === "inputMoodMorning") { W(curDate).moodMorning = t.value; save(); }
             if (t.id === "inputMoodNight") { W(curDate).moodNight = t.value; save(); }
             if (t.id === "bacaHabitSel") { appState.bacaHabit = t.value; Object.values(appState.entries).forEach(x => { delete x.bacaApplied; }); save(); bacaStart(); }
