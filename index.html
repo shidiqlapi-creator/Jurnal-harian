@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Jurnal Harian & Habit Tracker</title>
+    <meta name="theme-color" content="#4f46e5">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Phosphor Icons & Chart.js -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase JS SDK (Compat mode agar sesuai dengan Baca Buku) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased pb-20 md:pb-0">
+
+    <!-- MAIN WRAPPER -->
+    <div class="flex min-h-screen">
+        
+        <!-- SIDEBAR (Desktop) -->
+        <aside class="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-5 sticky top-0 h-screen z-30">
+            <div class="flex items-center gap-3 px-2 mb-8">
+                <div class="p-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xl shadow-lg shadow-indigo-500/30">
+                    <i class="ph-bold ph-journal"></i>
+                </div>
+                <div>
+                    <h1 class="font-extrabold text-lg text-white leading-none">Jurnal Harian</h1>
+                    <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">& Habit Tracker</span>
+                </div>
+            </div>
+
+            <nav class="space-y-1 flex-1">
+                <button data-nav="dashboard" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-indigo-400 bg-indigo-500/10 transition active">
+                    <i class="ph-bold ph-squares-four text-xl"></i> Dashboard
+                </button>
+                <button data-nav="today" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-400 hover:bg-slate-800 transition">
+                    <i class="ph-bold ph-note-pencil text-xl"></i> Jurnal Hari Ini
+                </button>
+                <button data-nav="history" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-400 hover:bg-slate-800 transition">
+                    <i class="ph-bold ph-calendar-blank text-xl"></i> Riwayat & Arsip
+                </button>
+                <button data-nav="habits" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-400 hover:bg-slate-800 transition">
+                    <i class="ph-bold ph-check-circle text-xl"></i> Kelola Habit & Ibadah
+                </button>
+                <button data-nav="settings" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-400 hover:bg-slate-800 transition">
+                    <i class="ph-bold ph-gear text-xl"></i> Pengaturan
+                </button>
+            </nav>
+
+            <div class="pt-4 border-t border-slate-800 space-y-3">
+                <div class="p-3 bg-slate-800/60 rounded-2xl border border-slate-800 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i class="ph-bold ph-cloud-check text-emerald-400 text-lg"></i>
+                        <span class="text-xs text-slate-300 font-semibold" id="cloudStatus">Firebase Connected</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 p-4 md:p-8 max-w-6xl mx-auto space-y-6">
+            
+            <!-- TOP BAR -->
+            <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 p-4 rounded-3xl border border-slate-800 shadow-sm">
+                <div>
+                    <h2 class="text-xl md:text-2xl font-extrabold text-white" id="pageTitle">Dashboard Ringkasan</h2>
+                    <p class="text-xs text-slate-400" id="currentDateStr">Loading date...</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Auto-Sync Baca Buku: Aktif
+                    </div>
+                </div>
+            </header>
+
+            <!-- SECTION 1: DASHBOARD -->
+            <div id="sec-dashboard" class="space-y-6 tab-content">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="p-5 rounded-3xl bg-gradient-to-br from-indigo-600 to-indigo-800 text-white shadow-xl space-y-2">
+                        <span class="text-xs font-medium text-indigo-200">Mood Pagi Hari Ini</span>
+                        <h3 class="text-2xl font-extrabold" id="dashMoodMorning">-</h3>
+                        <p class="text-[11px] text-indigo-200" id="dashNiatPagi">Belum ada catatan niat</p>
+                    </div>
+                    <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-2">
+                        <span class="text-xs font-medium text-slate-400">Pencapaian Ibadah</span>
+                        <h3 class="text-2xl font-extrabold text-emerald-400" id="dashIbadahScore">0%</h3>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+                            <div id="dashIbadahBar" class="bg-emerald-500 h-full w-0 transition-all duration-500"></div>
+                        </div>
+                    </div>
+                    <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-2">
+                        <span class="text-xs font-medium text-slate-400">Kebiasaan Baik (Habits)</span>
+                        <h3 class="text-2xl font-extrabold text-indigo-400" id="dashHabitScore">0/0</h3>
+                        <p class="text-[11px] text-slate-400" id="dashHabitDetail">0% selesai hari ini</p>
+                    </div>
+                    <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-2">
+                        <span class="text-xs font-medium text-slate-400">Streak Harian</span>
+                        <h3 class="text-2xl font-extrabold text-amber-400 flex items-center gap-1">
+                            <i class="ph-bold ph-fire text-amber-500"></i> <span id="dashStreak">0 Hari</span>
+                        </h3>
+                        <p class="text-[11px] text-slate-400">Konsistensi mengisi jurnal</p>
+                    </div>
+                </div>
+
+                <!-- CHARTS & SUMMARY -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="font-bold text-white">Tren Suasana Hati (7 Hari)</h3>
+                            <span class="text-xs text-slate-400">Skala 1 - 5</span>
+                        </div>
+                        <div class="h-64 relative">
+                            <canvas id="chartMood"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                        <h3 class="font-bold text-white">Refleksi & Syukur Malam</h3>
+                        <div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-800 space-y-2">
+                            <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Mood Malam Hari Ini</span>
+                            <p class="text-lg font-bold text-white" id="dashMoodNight">-</p>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block pt-2">Catatan Syukur / Evaluasi</span>
+                            <p class="text-xs text-slate-300 italic" id="dashSyukurTxt">"Belum ada catatan evaluasi untuk hari ini."</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: JURNAL HARI INI -->
+            <div id="sec-today" class="space-y-6 tab-content hidden">
+                <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-6">
+                    
+                    <!-- SESI PAGI -->
+                    <div class="space-y-4 pb-6 border-b border-slate-800">
+                        <h3 class="text-lg font-extrabold text-indigo-400 flex items-center gap-2">
+                            <i class="ph-bold ph-sun text-amber-400"></i> Sesi Pagi Hari
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 mb-2">Bagaimana Perasaan Pagi Ini?</label>
+                                <select id="inputMoodMorning" class="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="5">😁 5 - Sangat Bahagia & Semangat</option>
+                                    <option value="4" selected>🙂 4 - Baik & Tenang</option>
+                                    <option value="3">😐 3 - Biasa Saja</option>
+                                    <option value="2">🙁 2 - Lelah / Stres</option>
+                                    <option value="1">😢 1 - Kurang Baik / Sedih</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 mb-2">Niat & Fokus Utama Hari Ini</label>
+                                <input type="text" id="inputNiatPagi" placeholder="mis. Menyelesaikan laporan & olahraga 20 menit" class="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CHECKLIST IBADAH & HABITS -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b border-slate-800">
+                        <div class="space-y-3">
+                            <h4 class="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                                <i class="ph-bold ph-hands-praying"></i> Monitoring Ibadah
+                            </h4>
+                            <div id="ibadahChecklist" class="space-y-2"></div>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-sm font-bold text-indigo-400 flex items-center gap-2">
+                                    <i class="ph-bold ph-check-square"></i> Kebiasaan Baik (Habits)
+                                </h4>
+                                <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Synced via Firebase</span>
+                            </div>
+                            <div id="habitChecklist" class="space-y-2"></div>
+                        </div>
+                    </div>
+
+                    <!-- SESI MALAM -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-extrabold text-indigo-400 flex items-center gap-2">
+                            <i class="ph-bold ph-moon-stars text-indigo-400"></i> Sesi Malam Hari
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 mb-2">Perasaan Malam Ini</label>
+                                <select id="inputMoodNight" class="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="5">😌 5 - Sangat Puas & Tenang</option>
+                                    <option value="4" selected>🙂 4 - Cukup Baik</option>
+                                    <option value="3">😐 3 - Biasa Saja</option>
+                                    <option value="2">😫 2 - Lelah / Capek</option>
+                                    <option value="1">😢 1 - Buruk / Kecewa</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-400 mb-2">Evaluasi & Rasa Syukur Hari Ini</label>
+                                <textarea id="inputSyukur" placeholder="Tuliskan 3 hal yang kamu syukuri atau pelajaran hari ini..." class="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-800 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 h-24"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- SECTION 3: RIWAYAT & ARSIP -->
+            <div id="sec-history" class="space-y-6 tab-content hidden">
+                <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                    <h3 class="font-bold text-white">Arsip Catatan Harian</h3>
+                    <div id="historyList" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- SECTION 4: KELOLA HABIT & IBADAH -->
+            <div id="sec-habits" class="space-y-6 tab-content hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                        <h3 class="font-bold text-white">Kelola Daftar Ibadah</h3>
+                        <div id="manageIbadahList" class="space-y-2"></div>
+                        <div class="flex gap-2 pt-2">
+                            <input id="newIbadahName" placeholder="Nama Ibadah Baru" class="flex-1 px-3 py-2 rounded-xl border border-slate-800 bg-slate-800 text-xs text-white">
+                            <button id="btnAddIbadah" class="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-semibold">Tambah</button>
+                        </div>
+                    </div>
+                    <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                        <h3 class="font-bold text-white">Kelola Daftar Kebiasaan Baik</h3>
+                        <div id="manageHabitsList" class="space-y-2"></div>
+                        <div class="flex gap-2 pt-2">
+                            <input id="newHabitName" placeholder="Nama Kebiasaan Baru" class="flex-1 px-3 py-2 rounded-xl border border-slate-800 bg-slate-800 text-xs text-white">
+                            <button id="btnAddHabit" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold">Tambah</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 5: PENGATURAN -->
+            <div id="sec-settings" class="space-y-6 tab-content hidden">
+                <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+                    <h3 class="font-bold text-white">Cadangan & Ekspor Data</h3>
+                    <p class="text-xs text-slate-400">Unduh atau pulihkan seluruh data jurnal harian Anda.</p>
+                    <div class="flex gap-3">
+                        <button id="btnExportJSON" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold flex items-center gap-2">
+                            <i class="ph-bold ph-download-simple"></i> Unduh JSON
+                        </button>
+                        <button id="btnExportCSV" class="px-4 py-2 bg-slate-800 border border-slate-700 text-white rounded-xl text-xs font-semibold flex items-center gap-2">
+                            <i class="ph-bold ph-file-csv"></i> Unduh CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- MOBILE BOTTOM NAVIGATION -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/90 backdrop-blur-lg border-t border-slate-800 px-3 py-2 flex items-center justify-around">
+        <button data-nav="dashboard" class="nav-btn flex flex-col items-center gap-0.5 text-indigo-400 active">
+            <i class="ph-bold ph-squares-four text-xl"></i>
+            <span class="text-[10px]">Home</span>
+        </button>
+        <button data-nav="today" class="nav-btn flex flex-col items-center gap-0.5 text-slate-400">
+            <i class="ph-bold ph-note-pencil text-xl"></i>
+            <span class="text-[10px]">Jurnal</span>
+        </button>
+        <button data-nav="history" class="nav-btn flex flex-col items-center gap-0.5 text-slate-400">
+            <i class="ph-bold ph-calendar-blank text-xl"></i>
+            <span class="text-[10px]">Arsip</span>
+        </button>
+        <button data-nav="habits" class="nav-btn flex flex-col items-center gap-0.5 text-slate-400">
+            <i class="ph-bold ph-check-circle text-xl"></i>
+            <span class="text-[10px]">Habits</span>
+        </button>
+    </nav>
+
+    <!-- SCRIPT APPLICATION & FIREBASE INTEGRATION -->
+    <script>
+        // 1. KONFIGURASI FIREBASE BACA BUKU ANDA
+        const firebaseConfig = {
+            apiKey: "AIzaSyC_BLhEsBj-tgvINllYScA5aTXC3gv1OD0",
+            authDomain: "baca-buku-4cec8.firebaseapp.com",
+            projectId: "baca-buku-4cec8",
+            storageBucket: "baca-buku-4cec8.firebasestorage.app",
+            messagingSenderId: "60082725935",
+            appId: "1:60082725935:web:31ffdb4063dc22844a52da",
+            measurementId: "G-R9GWN20Y7B"
+        };
+
+        var db = null;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+        } catch(e) {
+            console.log("Firebase Init Error:", e);
+        }
+
+        // 2. STATE STORE JURNAL
+        const DEFAULT_IBADAH = ["Subuh", "Dzuhur", "Ashar", "Maghrib", "Isya", "Dzikir / Doa"];
+        const DEFAULT_HABITS = ["Membaca Buku", "Olahraga (20 Menit)", "Minum Air 2L", "Tidur Cukup"];
+
+        let appState = {
+            ibadahList: [...DEFAULT_IBADAH],
+            habitsList: [...DEFAULT_HABITS],
+            entries: {} //
