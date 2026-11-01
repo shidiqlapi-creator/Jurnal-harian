@@ -505,6 +505,38 @@
             }, err => { console.error(err); bacaStatus = "Baca Buku: gagal tersambung (" + (err.code || "error") + ")"; setStatus(); });
         }
 
+        /* ---------- tautan ke FitPulse: hari "Sah Olahraga" mencentang habit olahraga ---------- */
+        let fitStatus = "", fitUnsub = null;
+        function fitApply(parsed) {
+            if (!parsed || !Array.isArray(parsed.validDays)) throw new Error("format");
+            const days = new Set(parsed.validDays.filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)));
+            const name = appState.habitsList.find(h => /olahraga/i.test(h)); let changed = false;
+            days.forEach(k => {
+                if (!name) return;
+                const e = W(k);
+                if (!e.fitApplied) {
+                    e.fitApplied = true; changed = true;
+                    if (!e.habits[name]) { e.habits[name] = true; e.fitAuto = name; } // hanya centang otomatis yang boleh dicabut
+                }
+            });
+            Object.keys(appState.entries).forEach(k => {
+                const e = appState.entries[k];
+                if (days.has(k) || (!e.fitApplied && !e.fitAuto)) return;
+                delete e.fitApplied;
+                if (e.fitAuto) { if (e.habits && e.habits[e.fitAuto]) e.habits[e.fitAuto] = false; delete e.fitAuto; }
+                changed = true;
+            });
+            if (changed) { save(); const a = document.activeElement; if (!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) RENDERS()[view](); }
+        }
+        function fitStart() {
+            if (fitUnsub) { fitUnsub(); fitUnsub = null; }
+            if (!db) return;
+            fitUnsub = db.collection("fitpulse_sync").doc("default_user").onSnapshot(doc => {
+                if (!doc.exists) return;
+                try { fitApply(JSON.parse(doc.data().json)); } catch (e) { console.error(e); }
+            }, err => console.error("FitPulse sync:", err));
+        }
+
         /* ---------- navigasi ---------- */
         function go(v) {
             TODAY = ymd(new Date()); view = v;
@@ -752,11 +784,11 @@
             try { const o = JSON.parse($("impTxt").value); if (!o || typeof o.entries !== "object" || !Array.isArray(o.ibadahList)) throw 0; if (!confirm("Data saat ini akan diganti dengan data impor. Lanjutkan?")) return; const keep = { syncOn: appState.syncOn, syncId: appState.syncId, bacaOn: appState.bacaOn, bacaHabit: appState.bacaHabit, quoteBuiltin: appState.quoteBuiltin, quoteDay: appState.quoteDay, quoteSeen: appState.quoteSeen }; appState = Object.assign(normalize(o), keep); save(); $("impTxt").value = ""; alert("Data berhasil dipulihkan."); renderSettings(); }
             catch (e) { alert("JSON tidak valid atau formatnya tidak sesuai."); }
         };
-        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] }; save(); bacaStart(); go("dashboard"); } };
+        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] }; save(); bacaStart(); fitStart(); go("dashboard"); } };
 
         setStatus("Tersimpan di perangkat");
         go("dashboard");
-        bacaStart();
+        bacaStart(); fitStart();
         loadQuotes();
         setInterval(checkDay, 60000);
         document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDay(); });
