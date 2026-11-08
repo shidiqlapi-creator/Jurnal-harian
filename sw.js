@@ -1,5 +1,5 @@
 /* Service worker HabitLog: shell offline + cache CDN. Naikkan VERSION setiap index.html diubah. */
-const VERSION = "habitlog-v12";
+const VERSION = "habitlog-v13";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon.svg"];
 const SKIP = ["firestore.googleapis.com", "firebaseio.com", "identitytoolkit.googleapis.com", "securetoken.googleapis.com"];
 
@@ -14,7 +14,7 @@ self.addEventListener("fetch", e => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (SKIP.some(h => url.hostname.endsWith(h))) return; // data Firebase selalu langsung ke jaringan
-  if (url.pathname.endsWith("/quotes.json") || url.pathname.endsWith("/sw.js")) { // utamakan versi terbaru
+  if (url.pathname.endsWith("/quotes.json") || url.pathname.endsWith("/sw.js") || url.pathname.endsWith("/manifest.json")) { // utamakan versi terbaru
     e.respondWith(fetch(req).then(r => { const cp = r.clone(); caches.open(VERSION).then(c => c.put(req, cp)); return r; }).catch(() => caches.match(req)));
     return;
   }
