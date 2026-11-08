@@ -10,8 +10,8 @@
     <meta name="apple-mobile-web-app-title" content="HabitLog">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
-    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -308,6 +308,10 @@
                     <button id="btnImport" class="px-4 py-2 bg-slate-800 border border-slate-700 text-white rounded-xl text-xs font-semibold">Pulihkan</button>
                 </div>
                 <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
+                    <h3 class="font-bold text-white">Pasang sebagai aplikasi</h3>
+                    <div id="pwaBox" class="space-y-2 text-sm"></div>
+                </div>
+                <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
                     <h3 class="font-bold text-white">Kata penyemangat</h3>
                     <p class="text-xs text-slate-400">Kutipan di Dashboard dipilih acak dari daftar bawaan dan daftar Anda, tanpa berulang sampai semuanya pernah tampil.</p>
                     <div id="quoteBox" class="space-y-3"></div>
@@ -472,12 +476,13 @@
         /* ---------- tautan ke jurnal baca (Baca Buku), hanya membaca users/default_user ---------- */
         function bacaApply(parsed) {
             if (!parsed || !Array.isArray(parsed.logs)) throw new Error("format");
-            const pages = {};
-            parsed.logs.forEach(l => { if (!l || !/^\d{4}-\d{2}-\d{2}$/.test(l.date)) return; const n = (+l.to) - (+l.from) + 1; if (isFinite(n) && n > 0) pages[l.date] = (pages[l.date] || 0) + n; });
+            const pages = {}, last = {};
+            parsed.logs.forEach(l => { if (!l || !/^\d{4}-\d{2}-\d{2}$/.test(l.date)) return; const n = (+l.to) - (+l.from) + 1; if (isFinite(n) && n > 0) { pages[l.date] = (pages[l.date] || 0) + n; last[l.date] = +l.to; } }); // halaman terakhir = "to" dari catatan terakhir hari itu
             const name = appState.bacaHabit, ok = !!name && appState.habitsList.includes(name); let changed = false;
             Object.keys(pages).forEach(k => {
                 const e = W(k);
                 if (e.bacaPages !== pages[k]) { e.bacaPages = pages[k]; changed = true; }
+                if (e.bacaLast !== last[k]) { e.bacaLast = last[k]; changed = true; }
                 if (ok && !e.bacaApplied) {
                     e.bacaApplied = true; changed = true;
                     if (!e.habits[name]) { e.habits[name] = true; e.bacaAuto = name; } // hanya centang otomatis yang kelak boleh dicabut
@@ -487,7 +492,7 @@
             Object.keys(appState.entries).forEach(k => {
                 const e = appState.entries[k];
                 if (pages[k] || (e.bacaPages === undefined && !e.bacaApplied && !e.bacaAuto)) return;
-                delete e.bacaPages; delete e.bacaApplied;
+                delete e.bacaPages; delete e.bacaLast; delete e.bacaApplied;
                 if (e.bacaAuto) { if (e.habits && e.habits[e.bacaAuto]) e.habits[e.bacaAuto] = false; delete e.bacaAuto; }
                 changed = true;
             });
@@ -503,38 +508,6 @@
                 else { try { bacaApply(JSON.parse(doc.data().json)); bacaStatus = "Baca Buku: tersambung"; } catch (e) { console.error(e); bacaStatus = "Baca Buku: format data tidak dikenali"; } }
                 setStatus();
             }, err => { console.error(err); bacaStatus = "Baca Buku: gagal tersambung (" + (err.code || "error") + ")"; setStatus(); });
-        }
-
-        /* ---------- tautan ke FitPulse: hari "Sah Olahraga" mencentang habit olahraga ---------- */
-        let fitStatus = "", fitUnsub = null;
-        function fitApply(parsed) {
-            if (!parsed || !Array.isArray(parsed.validDays)) throw new Error("format");
-            const days = new Set(parsed.validDays.filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)));
-            const name = appState.habitsList.find(h => /olahraga/i.test(h)); let changed = false;
-            days.forEach(k => {
-                if (!name) return;
-                const e = W(k);
-                if (!e.fitApplied) {
-                    e.fitApplied = true; changed = true;
-                    if (!e.habits[name]) { e.habits[name] = true; e.fitAuto = name; } // hanya centang otomatis yang boleh dicabut
-                }
-            });
-            Object.keys(appState.entries).forEach(k => {
-                const e = appState.entries[k];
-                if (days.has(k) || (!e.fitApplied && !e.fitAuto)) return;
-                delete e.fitApplied;
-                if (e.fitAuto) { if (e.habits && e.habits[e.fitAuto]) e.habits[e.fitAuto] = false; delete e.fitAuto; }
-                changed = true;
-            });
-            if (changed) { save(); const a = document.activeElement; if (!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) RENDERS()[view](); }
-        }
-        function fitStart() {
-            if (fitUnsub) { fitUnsub(); fitUnsub = null; }
-            if (!db) return;
-            fitUnsub = db.collection("fitpulse_sync").doc("default_user").onSnapshot(doc => {
-                if (!doc.exists) return;
-                try { fitApply(JSON.parse(doc.data().json)); } catch (e) { console.error(e); }
-            }, err => console.error("FitPulse sync:", err));
         }
 
         /* ---------- navigasi ---------- */
@@ -623,6 +596,10 @@
             $("currentDateStr").textContent = fmtLong(TODAY);
             const a = document.activeElement; if (!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) RENDERS()[view]();
         }
+        function lastReadText() {
+            const k = Object.keys(appState.entries).filter(x => appState.entries[x].bacaLast && x <= TODAY).sort().pop();
+            return k ? " | 📖 terakhir baca hal. " + appState.entries[k].bacaLast + " (" + fmtShort(k) + ")" : "";
+        }
         /* ---------- dashboard ---------- */
         function renderDashboard() {
             const e = E(TODAY) || {}, ip = ibPct(TODAY), hp = hbPct(TODAY);
@@ -632,7 +609,7 @@
             $("dashIbadahScore").textContent = Math.round(ip * 100) + "%";
             $("dashIbadahBar").style.width = Math.round(ip * 100) + "%";
             $("dashHabitScore").textContent = appState.habitsList.filter(n => e.habits && e.habits[n]).length + "/" + appState.habitsList.length;
-            $("dashHabitDetail").textContent = Math.round(hp * 100) + "% selesai hari ini" + (e.bacaPages ? " | 📖 " + e.bacaPages + " halaman" : "");
+            $("dashHabitDetail").textContent = Math.round(hp * 100) + "% selesai hari ini" + (e.bacaPages ? " | 📖 " + e.bacaPages + " halaman" + (e.bacaLast ? " (sampai hal. " + e.bacaLast + ")" : "") : lastReadText());
             $("dashStreak").textContent = streak() + " Hari";
             $("dashMoodNight").textContent = e.moodNight ? MOODS[e.moodNight] : "-";
             $("dashSyukurTxt").textContent = e.syukurTxt ? "\u201C" + e.syukurTxt + "\u201D" : "Belum ada catatan evaluasi untuk hari ini.";
@@ -656,7 +633,7 @@
             $("btnToday").style.display = curDate === TODAY ? "none" : "";
             $("inputMoodMorning").value = e.moodMorning || ""; $("inputNiatPagi").value = e.niatPagi || "";
             $("inputMoodNight").value = e.moodNight || ""; $("inputSyukur").value = e.syukurTxt || "";
-            $("bacaNote").textContent = e.bacaPages ? "📖 Jurnal Baca mencatat " + e.bacaPages + " halaman pada hari ini." : ""; $("bacaNote").classList.toggle("hidden", !e.bacaPages);
+            $("bacaNote").textContent = e.bacaPages ? "📖 Jurnal Baca mencatat " + e.bacaPages + " halaman pada hari ini" + (e.bacaLast ? ", terakhir sampai halaman " + e.bacaLast : "") + "." : ""; $("bacaNote").classList.toggle("hidden", !e.bacaPages);
             $("ibadahChecklist").innerHTML = appState.ibadahList.map(n => checkRow(n, "ibadah", e.ibadah && e.ibadah[n])).join("") || '<p class="text-xs text-slate-400">Belum ada ibadah. Tambahkan di menu Kelola.</p>';
             $("habitChecklist").innerHTML = appState.habitsList.map(n => checkRow(n, "habits", e.habits && e.habits[n])).join("") || '<p class="text-xs text-slate-400">Belum ada kebiasaan. Tambahkan di menu Kelola.</p>';
         }
@@ -680,7 +657,7 @@
                 return `<div class="p-4 rounded-2xl bg-slate-800/50 border border-slate-800 space-y-2">
                     <div class="flex items-center justify-between gap-2"><p class="font-bold text-sm">${fmtLong(k)}</p><button data-edit="${k}" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-xs font-semibold">Buka</button></div>
                     <p class="text-xs text-slate-400">Pagi: ${e.moodMorning ? MOODS[e.moodMorning] : "-"} &nbsp;|&nbsp; Malam: ${e.moodNight ? MOODS[e.moodNight] : "-"}</p>
-                    ${e.bacaPages ? `<p class="text-xs text-indigo-300">📖 Membaca ${e.bacaPages} halaman (dari Jurnal Baca)</p>` : ""}
+                    ${e.bacaPages ? `<p class="text-xs text-indigo-300">📖 Membaca ${e.bacaPages} halaman${e.bacaLast ? ", sampai halaman " + e.bacaLast : ""} (dari Jurnal Baca)</p>` : ""}
                     <p class="text-xs text-slate-300">Ibadah ${Math.round(ibPct(k) * 100)}% (${ib.length}/${appState.ibadahList.length}), kebiasaan ${Math.round(hbPct(k) * 100)}% (${hb.length}/${appState.habitsList.length})${extra.length ? ", ditambah " + extra.length + " item yang sudah dihapus dari daftar" : ""}</p>
                     ${e.niatPagi ? `<p class="text-xs"><span class="text-indigo-400 font-semibold">Niat:</span> ${hl(e.niatPagi, q)}</p>` : ""}
                     ${e.syukurTxt ? `<p class="text-xs italic text-slate-300"><span class="text-indigo-400 font-semibold not-italic">Syukur:</span> ${hl(e.syukurTxt, q)}</p>` : ""}</div>`;
@@ -703,6 +680,7 @@
         function download(name, text, type) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
         function renderSettings() {
             const b = "px-4 py-2 rounded-xl text-xs font-semibold";
+            renderPwa();
             $("quoteBox").innerHTML = `<label class="flex items-center gap-3 text-sm"><input type="checkbox" id="quoteBuiltinChk" ${appState.quoteBuiltin ? "checked" : ""} class="w-5 h-5 accent-indigo-500"> Pakai kutipan bawaan (${QUOTES.length} kutipan)</label>
                 <label class="block text-xs font-semibold text-slate-400" for="newQuote">Tambah kutipan sendiri (satu baris satu kutipan)</label>
                 <textarea id="newQuote" rows="3" placeholder="Tulis kutipan atau pesan semangat untuk dirimu..." class="w-full px-3 py-2 rounded-xl border border-slate-800 bg-slate-800 text-sm text-white"></textarea>
@@ -728,13 +706,55 @@
             if (a === "copy") { try { await navigator.clipboard.writeText(appState.syncId); alert("Kode disalin."); } catch (e) { $("syncCodeView").select(); } }
         }
 
+        /* ---------- pasang sebagai aplikasi (PWA) ---------- */
+        let deferredInstall = null;
+        window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; if (view === "settings") renderPwa(); });
+        window.addEventListener("appinstalled", () => { deferredInstall = null; if (view === "settings") renderPwa(); });
+        async function diagnose() {
+            const out = [], row = (ok, t, hint) => out.push({ ok, t, hint });
+            const local = ["localhost", "127.0.0.1"].includes(location.hostname);
+            row(location.protocol === "https:" || local, "Dibuka lewat HTTPS", "Buka lewat alamat GitHub Pages (https://...), bukan dari file di HP.");
+            let man = null, base = location.href;
+            try { const link = document.querySelector('link[rel="manifest"]'); if (!link) throw 0; base = link.href; const r = await fetch(base, { cache: "no-store" }); if (!r.ok) throw 0; man = await r.json(); row(true, "manifest.json terbaca"); }
+            catch (e) { row(false, "manifest.json terbaca", "Pastikan manifest.json diupload di folder yang sama dengan index.html."); }
+            if (man) {
+                for (const sz of [192, 512]) {
+                    const ic = (man.icons || []).find(x => String(x.sizes).split(" ").includes(sz + "x" + sz) && /png/.test(x.type || "png"));
+                    let ok = false; if (ic) { try { ok = (await fetch(new URL(ic.src, base).href, { cache: "no-store" })).ok; } catch (e) {} }
+                    row(ok, "Ikon " + sz + "x" + sz + " ada", "Upload icon-" + sz + ".png ke folder yang sama dengan index.html (tanpa subfolder).");
+                }
+                row(man.display === "standalone" && !!man.start_url, "Mode aplikasi (standalone) diatur");
+            }
+            let swOk = false, swHint = "Upload sw.js ke folder yang sama, lalu muat ulang halaman ini satu kali.";
+            try {
+                const r = await fetch("sw.js", { cache: "no-store" }); const txt = r.ok ? await r.text() : "";
+                if (r.ok && txt.trim().length < 50) swHint = "sw.js kosong. Pakai sw.js terbaru dari paket ini.";
+                else { const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null; swOk = r.ok && !!(reg && (reg.active || reg.waiting || reg.installing)); }
+            } catch (e) {}
+            row(swOk, "Service worker aktif", swHint);
+            return out;
+        }
+        async function renderPwa() {
+            const box = $("pwaBox"); if (!box) return;
+            const standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+            if (standalone) { box.innerHTML = '<p class="text-emerald-400">Sudah berjalan sebagai aplikasi terpasang.</p>'; return; }
+            box.innerHTML = '<p class="text-slate-400 text-xs">Memeriksa...</p>';
+            const res = await diagnose(); if (view !== "settings") return;
+            const ios = /iphone|ipad|ipod/i.test(navigator.userAgent), allOk = res.every(x => x.ok);
+            box.innerHTML = res.map(x => `<p class="flex gap-2 text-xs"><span>${x.ok ? "✅" : "❌"}</span><span>${esc(x.t)}${x.ok || !x.hint ? "" : '<br><span class="text-amber-300">' + esc(x.hint) + "</span>"}</span></p>`).join("") +
+                (deferredInstall ? '<button data-pwa="install" class="mt-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white">Pasang aplikasi sekarang</button>'
+                : ios ? '<p class="text-xs text-slate-300 mt-2">iPhone/iPad: ketuk tombol Bagikan di Safari, lalu pilih <b>Tambah ke Layar Utama</b>.</p>'
+                : allOk ? '<p class="text-xs text-slate-300 mt-2">Semua syarat terpenuhi. Di Chrome Android buka menu titik tiga, lalu pilih <b>Instal aplikasi</b>. Jika baru diupload, tutup lalu buka ulang halaman sekali.</p>'
+                : '<p class="text-xs text-slate-400 mt-2">Perbaiki item bertanda silang, lalu buka ulang halaman ini.</p>');
+        }
         /* ---------- event ---------- */
         document.addEventListener("click", e => {
-            const t = e.target.closest("[data-nav],[data-edit],[data-del],[data-sync],[data-baca],[data-quote],[data-qdel]"); if (!t) return;
+            const t = e.target.closest("[data-nav],[data-edit],[data-del],[data-sync],[data-baca],[data-quote],[data-qdel],[data-pwa]"); if (!t) return;
             const d = t.dataset;
             if (d.nav) { if (d.nav === "today") curDate = TODAY; return go(d.nav); }
             if (d.edit) { curDate = d.edit; return go("today"); }
             if (d.del) { const key = d.del === "ibadah" ? "ibadahList" : "habitsList"; if (confirm('Hapus "' + d.name + '" dari daftar? Catatan lama tetap tersimpan.')) { appState[key] = appState[key].filter(n => n !== d.name); save(); renderManage(); } return; }
+            if (d.pwa === "install" && deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; renderPwa(); }); return; }
             if (d.quote === "shuffle") return showQuote(true);
             if (d.quote === "add") {
                 const add = $("newQuote").value.split("\n").map(x => x.trim().slice(0, 300)).filter(x => x && !appState.customQuotes.includes(x));
@@ -776,19 +796,19 @@
         $("btnExportJSON").onclick = () => download("jurnal-harian-" + TODAY + ".json", JSON.stringify({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries, customQuotes: appState.customQuotes }), "application/json");
         $("btnExportCSV").onclick = () => {
             const c = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"', names = appState.ibadahList.concat(appState.habitsList);
-            const head = ["tanggal", "mood_pagi", "niat", "mood_malam", "syukur", "persen_ibadah", "persen_habit", "halaman_baca"].concat(names);
-            const rows = Object.keys(appState.entries).sort().map(k => { const e = E(k); return [k, e.moodMorning || "", e.niatPagi || "", e.moodNight || "", e.syukurTxt || "", Math.round(ibPct(k) * 100), Math.round(hbPct(k) * 100), e.bacaPages || ""].concat(appState.ibadahList.map(n => e.ibadah && e.ibadah[n] ? 1 : 0), appState.habitsList.map(n => e.habits && e.habits[n] ? 1 : 0)); });
+            const head = ["tanggal", "mood_pagi", "niat", "mood_malam", "syukur", "persen_ibadah", "persen_habit", "halaman_baca", "halaman_terakhir"].concat(names);
+            const rows = Object.keys(appState.entries).sort().map(k => { const e = E(k); return [k, e.moodMorning || "", e.niatPagi || "", e.moodNight || "", e.syukurTxt || "", Math.round(ibPct(k) * 100), Math.round(hbPct(k) * 100), e.bacaPages || "", e.bacaLast || ""].concat(appState.ibadahList.map(n => e.ibadah && e.ibadah[n] ? 1 : 0), appState.habitsList.map(n => e.habits && e.habits[n] ? 1 : 0)); });
             download("jurnal-harian-" + TODAY + ".csv", [head].concat(rows).map(r => r.map(c).join(",")).join("\n"), "text/csv");
         };
         $("btnImport").onclick = () => {
             try { const o = JSON.parse($("impTxt").value); if (!o || typeof o.entries !== "object" || !Array.isArray(o.ibadahList)) throw 0; if (!confirm("Data saat ini akan diganti dengan data impor. Lanjutkan?")) return; const keep = { syncOn: appState.syncOn, syncId: appState.syncId, bacaOn: appState.bacaOn, bacaHabit: appState.bacaHabit, quoteBuiltin: appState.quoteBuiltin, quoteDay: appState.quoteDay, quoteSeen: appState.quoteSeen }; appState = Object.assign(normalize(o), keep); save(); $("impTxt").value = ""; alert("Data berhasil dipulihkan."); renderSettings(); }
             catch (e) { alert("JSON tidak valid atau formatnya tidak sesuai."); }
         };
-        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] }; save(); bacaStart(); fitStart(); go("dashboard"); } };
+        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] }; save(); bacaStart(); go("dashboard"); } };
 
         setStatus("Tersimpan di perangkat");
         go("dashboard");
-        bacaStart(); fitStart();
+        bacaStart();
         loadQuotes();
         setInterval(checkDay, 60000);
         document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDay(); });
