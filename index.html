@@ -115,6 +115,9 @@
                         <span class="text-xs text-slate-300 font-semibold" id="cloudStatus">Tersimpan di perangkat</span>
                     </div>
                 </div>
+                <button data-acc="menu" id="btnAccountSide" class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-slate-300 bg-slate-800/60 border border-slate-800 hover:bg-slate-800 transition text-left">
+                    <i class="ph-bold ph-user-circle text-xl"></i><span class="min-w-0 flex-1"><span id="accLabelSide" class="block text-sm font-semibold truncate">Masuk / daftar</span><span id="accSub" class="block text-[10px] text-slate-400 truncate">Mode lokal</span></span>
+                </button>
             </div>
         </aside>
 
@@ -132,6 +135,9 @@
                         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                         <span id="syncBadge">Mode lokal</span>
                     </div>
+                    <button data-acc="menu" id="btnAccount" class="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-2" aria-label="Akun">
+                        <i class="ph-bold ph-user-circle text-base"></i><span id="accLabel">Masuk</span>
+                    </button>
                 </div>
             </header>
 
@@ -462,7 +468,8 @@
 
         /* ---------- simpan ---------- */
         let bacaStatus = "Baca Buku: menyambung...", bacaUnsub = null, lastSave = "Tersimpan di perangkat";
-        function setStatus(t) { if (t) lastSave = t; $("cloudStatus").textContent = lastSave; $("syncBadge").textContent = bacaStatus + (user ? " | Akun: " + (user.email || "aktif") : " | Mode lokal"); }
+        function setStatus(t) { if (t) lastSave = t; $("cloudStatus").textContent = lastSave; $("syncBadge").textContent = bacaStatus + (user ? " | Akun: " + (user.email || "aktif") : " | Mode lokal");
+            $("accLabel").textContent = user ? "Keluar" : "Masuk"; $("accLabelSide").textContent = user ? "Keluar" : "Masuk / daftar"; $("accSub").textContent = user ? (user.email || "Akun aktif") : "Mode lokal"; }
         const portable = () => ({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries, customQuotes: appState.customQuotes, listsTs: appState.listsTs || 0 });
         const cloudPayload = () => ({ data: JSON.stringify(portable()), ts: Date.now(), v: 2 });
         function stable(o) { return JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v)) ? Object.keys(v).sort().reduce((r, x) => { r[x] = v[x]; return r; }, {}) : v); }
@@ -852,6 +859,7 @@
                 appState.customQuotes.push(...new Set(add)); appState.listsTs = Date.now(); save(); return renderSettings();
             }
             if (d.qdel !== undefined) { const q = appState.customQuotes[+d.qdel]; if (q !== undefined && confirm("Hapus kutipan ini dari daftar?")) { appState.customQuotes.splice(+d.qdel, 1); appState.listsTs = Date.now(); save(); renderSettings(); } return; }
+            if (d.acc === "menu") { if (user) return doLogout(); authErr(""); return $("authModal").classList.remove("hidden"); }
             if (d.acc === "sync") return save();
             if (d.acc === "out") return doLogout();
             if (d.acc === "login") { authErr(""); return $("authModal").classList.remove("hidden"); }
