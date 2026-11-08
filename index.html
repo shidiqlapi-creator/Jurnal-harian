@@ -41,6 +41,7 @@
     <!-- Firebase JS SDK (Compat mode agar sesuai dengan Baca Buku) -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
@@ -52,6 +53,27 @@
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen antialiased pb-24 md:pb-0" style="padding-top:env(safe-area-inset-top,0px)">
+    <!-- LOGIN AKUN -->
+    <div id="authModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <div class="text-center space-y-1">
+                <img src="icon-192.png" alt="" class="w-16 h-16 mx-auto rounded-2xl">
+                <h2 class="text-xl font-extrabold text-white">HabitLog</h2>
+                <p class="text-xs text-slate-400">Masuk agar jurnal tersimpan di akun dan sama di semua perangkat.</p>
+            </div>
+            <div id="authError" class="hidden p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl text-center"></div>
+            <div class="space-y-3">
+                <div><label for="authEmail" class="block text-xs font-semibold text-slate-400 mb-1">Email</label>
+                <input type="email" id="authEmail" autocomplete="email" placeholder="nama@email.com" class="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></div>
+                <div><label for="authPass" class="block text-xs font-semibold text-slate-400 mb-1">Kata sandi</label>
+                <input type="password" id="authPass" autocomplete="current-password" placeholder="Minimal 6 karakter" class="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></div>
+                <button id="btnLogin" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl">Masuk</button>
+                <button id="btnRegister" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl">Daftar akun baru</button>
+                <div class="flex justify-between text-xs"><button id="btnForgot" class="text-indigo-400">Lupa kata sandi?</button><button id="btnGuest" class="text-slate-400">Pakai tanpa login</button></div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- MAIN WRAPPER -->
     <div class="flex min-h-screen">
@@ -322,9 +344,8 @@
                     <div id="bacaBox" class="space-y-2"></div>
                 </div>
                 <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
-                    <h3 class="font-bold text-white">Sinkronisasi cloud jurnal (opsional)</h3>
-                    <p class="text-xs text-slate-400">Secara bawaan data hanya di perangkat ini. Aktifkan untuk menyalin data ke Firebase, lalu pakai kode yang sama di perangkat lain. Siapa pun yang tahu kode ini bisa membaca data Anda, jadi simpan baik-baik.</p>
-                    <div id="syncBox" class="space-y-2"></div>
+                    <h3 class="font-bold text-white">Akun & sinkronisasi</h3>
+                    <div id="accBox" class="space-y-2"></div>
                 </div>
                 <div class="p-5 rounded-3xl bg-slate-900 border border-rose-500/20 space-y-3">
                     <h3 class="font-bold text-rose-400">Zona berbahaya</h3>
@@ -361,7 +382,7 @@
 
     <!-- SCRIPT APPLICATION & FIREBASE INTEGRATION -->
     <script>
-        // 1. KONFIGURASI FIREBASE BACA BUKU ANDA
+        // 1. FIREBASE: satu project (baca-buku) untuk login akun, data jurnal, dan catatan bacaan dari Baca Buku
         const firebaseConfig = {
             apiKey: "AIzaSyC_BLhEsBj-tgvINllYScA5aTXC3gv1OD0",
             authDomain: "baca-buku-4cec8.firebaseapp.com",
@@ -372,19 +393,17 @@
             measurementId: "G-R9GWN20Y7B"
         };
 
-        var db = null;
-        try {
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-        } catch(e) {
-            console.log("Firebase Init Error:", e);
-        }
+        var db = null, auth = null;
+        try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); } catch (e) { console.log("Firebase Init Error:", e); }
+        try { auth = firebase.auth(); } catch (e) { console.log("Firebase Auth tidak termuat:", e); }
+        const dbBaca = db; // catatan bacaan ada di project yang sama (hanya dibaca)
+        const jurnalDoc = uid => db.collection("jurnal_harian").doc(uid);
 
         // 2. STATE STORE JURNAL
         const DEFAULT_IBADAH = ["Subuh", "Dzuhur", "Ashar", "Maghrib", "Isya", "Dzikir / Doa"];
         const DEFAULT_HABITS = ["Membaca Buku", "Olahraga (20 Menit)", "Minum Air 2L", "Tidur Cukup"];
 
-        let appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] };
+        let appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [], owner: "", listsTs: 0 };
         const LS = "jurnal_harian_state", LS_OLD = "jurnal-harian-v1";
         const $ = id => document.getElementById(id);
         const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -418,7 +437,7 @@
                 quoteBuiltin: s.quoteBuiltin !== false,
                 quoteDay: (s.quoteDay && typeof s.quoteDay.text === "string") ? s.quoteDay : null,
                 quoteSeen: Array.isArray(s.quoteSeen) ? s.quoteSeen.map(String) : [],
-                syncOn: !!s.syncOn, syncId: typeof s.syncId === "string" ? s.syncId : ""
+                owner: typeof s.owner === "string" ? s.owner : "", listsTs: +s.listsTs || 0
             };
         }
         try { const r = localStorage.getItem(LS) || localStorage.getItem(LS_OLD); if (r) appState = normalize(JSON.parse(r)); } catch (e) { console.error(e); }
@@ -429,6 +448,7 @@
             if (!e.ibadah) e.ibadah = {}; if (!e.habits) e.habits = {};
             return e;
         }
+        function T(k) { const e = W(k); e.ts = Date.now(); return e; } // dipakai untuk perubahan dari pengguna (dasar penggabungan antar perangkat)
         const hasData = e => !!e && !!(e.moodMorning || e.moodNight || e.niatPagi || e.syukurTxt || Object.values(e.ibadah || {}).some(Boolean) || Object.values(e.habits || {}).some(Boolean));
         const ratio = (list, map) => list.length ? list.filter(n => map && map[n]).length / list.length : 0;
         const ibPct = k => ratio(appState.ibadahList, E(k) && E(k).ibadah);
@@ -442,12 +462,16 @@
 
         /* ---------- simpan ---------- */
         let bacaStatus = "Baca Buku: menyambung...", bacaUnsub = null, lastSave = "Tersimpan di perangkat";
-        function setStatus(t) { if (t) lastSave = t; $("cloudStatus").textContent = lastSave; $("syncBadge").textContent = bacaStatus + (appState.syncOn ? " | Cloud jurnal: aktif" : ""); }
-        function cloudPayload() { return { data: JSON.stringify({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries, customQuotes: appState.customQuotes }), ts: Date.now() }; }
+        function setStatus(t) { if (t) lastSave = t; $("cloudStatus").textContent = lastSave; $("syncBadge").textContent = bacaStatus + (user ? " | Akun: " + (user.email || "aktif") : " | Mode lokal"); }
+        const portable = () => ({ ibadahList: appState.ibadahList, habitsList: appState.habitsList, entries: appState.entries, customQuotes: appState.customQuotes, listsTs: appState.listsTs || 0 });
+        const cloudPayload = () => ({ data: JSON.stringify(portable()), ts: Date.now(), v: 2 });
+        function stable(o) { return JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v)) ? Object.keys(v).sort().reduce((r, x) => { r[x] = v[x]; return r; }, {}) : v); }
+        let user = null, cloudUnsub = null, cloudDirty = false;
+        const RULES_MSG = "Gagal sinkron: aturan Firestore belum mengizinkan koleksi jurnal_harian untuk akun ini";
         async function pushCloud() {
-            if (!appState.syncOn || !db || !appState.syncId) return;
-            try { await db.collection("jurnal_harian").doc(appState.syncId).set(cloudPayload()); setStatus("Tersinkron ke cloud"); }
-            catch (e) { console.error(e); setStatus("Gagal sinkron cloud (data aman di perangkat)"); }
+            if (!user || !db) return;
+            try { await jurnalDoc(user.uid).set(cloudPayload()); cloudDirty = false; setStatus("Tersinkron ke akun"); }
+            catch (e) { console.error(e); cloudDirty = true; setStatus(e.code === "permission-denied" ? RULES_MSG : "Gagal sinkron akun (data aman di perangkat)"); }
         }
         function save() {
             clearTimeout(saveTimer);
@@ -455,22 +479,101 @@
             saveTimer = setTimeout(() => {
                 try { localStorage.setItem(LS, JSON.stringify(appState)); setStatus("Tersimpan di perangkat"); }
                 catch (e) { console.error(e); setStatus("Gagal menyimpan (penyimpanan penuh atau diblokir)"); }
-                pushCloud();
+                if (user) { cloudDirty = true; pushCloud(); }
             }, 300);
         }
-        async function pullCloud(askReplace) {
-            if (!db || !appState.syncId) return alert("Firebase belum siap. Periksa koneksi internet.");
-            try {
-                const snap = await db.collection("jurnal_harian").doc(appState.syncId).get();
-                if (snap.exists) {
-                    const r = snap.data(), c = normalize(JSON.parse(r.data));
-                    if (!askReplace || confirm("Data cloud ditemukan.\nOK = pakai data cloud (data di perangkat ini diganti).\nBatal = timpa cloud dengan data perangkat ini.")) {
-                        appState.ibadahList = c.ibadahList; appState.habitsList = c.habitsList; appState.entries = c.entries; if (c.customQuotes.length) appState.customQuotes = c.customQuotes; save(); go(view); return;
-                    }
-                }
-                await pushCloud();
-            } catch (e) { console.error(e); alert("Gagal mengambil data cloud. Cek aturan Firestore dan koneksi."); }
+        function freshState() { return normalize({}); }
+        function mergeRemote(r, first) {
+            const L = appState, ents = Object.assign({}, L.entries);
+            Object.keys(r.entries).forEach(k => {
+                const x = ents[k], y = r.entries[k];
+                if (!x) { ents[k] = y; return; }
+                const tx = x.ts || 0, ty = y.ts || 0;
+                ents[k] = ty > tx ? y : ty < tx ? x : (JSON.stringify(y).length > JSON.stringify(x).length ? y : x);
+            });
+            L.entries = ents;
+            const un = (p, q) => p.concat(q.filter(v => !p.includes(v)));
+            if (first) { L.ibadahList = un(r.ibadahList, L.ibadahList); L.habitsList = un(r.habitsList, L.habitsList); L.customQuotes = un(r.customQuotes, L.customQuotes); L.listsTs = Math.max(L.listsTs || 0, r.listsTs || 0) || Date.now(); }
+            else if ((r.listsTs || 0) > (L.listsTs || 0)) { L.ibadahList = r.ibadahList; L.habitsList = r.habitsList; L.customQuotes = r.customQuotes; L.listsTs = r.listsTs; }
         }
+        function cloudStop() { if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; } }
+        function cloudStart() {
+            cloudStop();
+            if (!user || !db) return;
+            let first = appState.owner !== user.uid;
+            if (first && appState.owner) appState = freshState(); // data di perangkat ini milik akun lain: jangan dicampur
+            cloudUnsub = jurnalDoc(user.uid).onSnapshot(snap => {
+                if (snap.metadata.hasPendingWrites) return;
+                let r = null;
+                if (snap.exists) { try { r = normalize(JSON.parse(snap.data().data)); } catch (e) { console.error(e); return setStatus("Data akun tidak terbaca"); } }
+                const before = stable(portable());
+                if (r) {
+                    const pristine = !Object.keys(appState.entries).length && !appState.listsTs;
+                    if (first && pristine) { appState.ibadahList = r.ibadahList; appState.habitsList = r.habitsList; appState.entries = r.entries; appState.customQuotes = r.customQuotes; appState.listsTs = r.listsTs; }
+                    else mergeRemote(r, first);
+                }
+                first = false; appState.owner = user.uid;
+                try { localStorage.setItem(LS, JSON.stringify(appState)); } catch (e) {}
+                const after = stable(portable()), remote = r ? stable({ ibadahList: r.ibadahList, habitsList: r.habitsList, entries: r.entries, customQuotes: r.customQuotes, listsTs: r.listsTs || 0 }) : null;
+                if (after !== before) { const a = document.activeElement; if (!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) RENDERS()[view](); }
+                if (after !== remote) save(); else { cloudDirty = false; setStatus("Tersinkron ke akun"); }
+            }, err => { console.error(err); setStatus(err.code === "permission-denied" ? RULES_MSG : "Gagal sinkron akun (" + (err.code || "error") + ")"); });
+        }
+
+        /* ---------- login akun ---------- */
+        const guest = () => { try { return localStorage.getItem("habitlog-guest") === "1"; } catch (e) { return false; } };
+        function authMsg(e) {
+            const c = (e && e.code) || "";
+            if (c.includes("invalid-email")) return "Format email tidak valid.";
+            if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found")) return "Email atau kata sandi salah.";
+            if (c.includes("email-already-in-use")) return "Email sudah terdaftar. Silakan masuk.";
+            if (c.includes("weak-password")) return "Kata sandi minimal 6 karakter.";
+            if (c.includes("operation-not-allowed")) return "Login email/sandi belum diaktifkan di Firebase Console (Authentication > Sign-in method).";
+            if (c.includes("too-many-requests")) return "Terlalu banyak percobaan. Coba lagi beberapa menit lagi.";
+            if (c.includes("network")) return "Tidak ada koneksi internet.";
+            if (c.includes("unauthorized-domain")) return "Domain ini belum diizinkan di Firebase (Authentication > Settings > Authorized domains).";
+            return "Gagal masuk. Coba lagi.";
+        }
+        function authErr(t) { $("authError").textContent = t; $("authError").classList.toggle("hidden", !t); }
+        async function runAuth(fn) {
+            authErr("");
+            if (!auth) return authErr("Modul login tidak termuat. Periksa koneksi internet.");
+            const bs = [$("btnLogin"), $("btnRegister")]; bs.forEach(b => { b.disabled = true; });
+            try { await fn(); } catch (e) { authErr(authMsg(e)); } finally { bs.forEach(b => { b.disabled = false; }); }
+        }
+        $("btnLogin").onclick = () => runAuth(() => auth.signInWithEmailAndPassword($("authEmail").value.trim(), $("authPass").value));
+        $("btnRegister").onclick = () => runAuth(() => auth.createUserWithEmailAndPassword($("authEmail").value.trim(), $("authPass").value));
+        $("authPass").addEventListener("keydown", e => { if (e.key === "Enter") $("btnLogin").click(); });
+        $("btnForgot").onclick = async () => {
+            const em = $("authEmail").value.trim(); if (!em) return authErr("Isi email dulu, lalu tekan Lupa kata sandi.");
+            await runAuth(async () => { await auth.sendPasswordResetEmail(em); authErr(""); alert("Tautan atur ulang kata sandi dikirim ke " + em + " (cek juga folder spam)."); });
+        };
+        $("btnGuest").onclick = () => { try { localStorage.setItem("habitlog-guest", "1"); } catch (e) {} $("authModal").classList.add("hidden"); };
+        async function doLogout() {
+            const warn = cloudDirty ? "Ada perubahan yang belum tersinkron ke akun dan akan hilang dari perangkat ini jika Anda keluar.\n\n" : "";
+            if (!confirm(warn + "Keluar dari akun? Data di perangkat ini akan dihapus (data tetap tersimpan di akun).")) return;
+            cloudStop();
+            try { await auth.signOut(); } catch (e) { return alert("Gagal keluar. Coba lagi."); }
+            appState = freshState(); try { localStorage.removeItem(LS); localStorage.removeItem(LS_OLD); } catch (e) {}
+            bacaStart(); go("dashboard");
+        }
+        function renderAcc() {
+            const b = "px-4 py-2 rounded-xl text-xs font-semibold", box = $("accBox");
+            if (!auth) { box.innerHTML = '<p class="text-xs text-amber-300">Modul login Firebase tidak termuat. Periksa koneksi internet lalu muat ulang.</p>'; return; }
+            if (user) {
+                box.innerHTML = `<p class="text-sm">Masuk sebagai <b>${esc(user.email || user.uid)}</b></p><p class="text-xs text-slate-300">Status: ${esc(lastSave)}</p>` +
+                    (lastSave === RULES_MSG ? '<p class="text-xs text-amber-300">Tambahkan aturan ini di Firestore Rules (tanpa menghapus aturan lain):</p><pre class="text-[11px] p-3 rounded-xl bg-slate-800 overflow-x-auto">match /jurnal_harian/{userId} {\n  allow read, write: if request.auth != null\n    && request.auth.uid == userId;\n}</pre>' : "") +
+                    `<div class="flex flex-wrap gap-2"><button data-acc="sync" class="${b} bg-slate-800 border border-slate-700">Sinkronkan sekarang</button><button data-acc="out" class="${b} bg-rose-500/10 text-rose-400">Keluar</button></div>`;
+            } else {
+                box.innerHTML = `<p class="text-xs text-slate-300">Mode lokal: data hanya ada di peramban ini dan hilang jika data peramban dibersihkan.</p><button data-acc="login" class="${b} bg-indigo-600 text-white">Masuk atau daftar</button>`;
+            }
+        }
+        if (auth) auth.onAuthStateChanged(u => {
+            user = u;
+            if (u) { $("authModal").classList.add("hidden"); cloudStart(); }
+            else { cloudStop(); if (!guest()) $("authModal").classList.remove("hidden"); }
+            setStatus(); if (view === "settings") renderAcc();
+        });
 
         const RENDERS = () => ({ dashboard: renderDashboard, today: renderToday, history: renderHistory, habits: renderManage, settings: renderSettings });
         /* ---------- tautan ke jurnal baca (Baca Buku), hanya membaca users/default_user ---------- */
@@ -501,9 +604,9 @@
         function bacaStart() {
             if (bacaUnsub) { bacaUnsub(); bacaUnsub = null; }
             if (!appState.bacaOn) { bacaStatus = "Baca Buku: dimatikan"; return setStatus(); }
-            if (!db) { bacaStatus = "Baca Buku: Firebase tidak termuat"; return setStatus(); }
+            if (!dbBaca) { bacaStatus = "Baca Buku: Firebase tidak termuat"; return setStatus(); }
             bacaStatus = "Baca Buku: menyambung..."; setStatus();
-            bacaUnsub = db.collection("users").doc("default_user").onSnapshot(doc => {
+            bacaUnsub = dbBaca.collection("users").doc("default_user").onSnapshot(doc => {
                 if (!doc.exists) bacaStatus = "Baca Buku: data tidak ditemukan";
                 else { try { bacaApply(JSON.parse(doc.data().json)); bacaStatus = "Baca Buku: tersambung"; } catch (e) { console.error(e); bacaStatus = "Baca Buku: format data tidak dikenali"; } }
                 setStatus();
@@ -673,7 +776,7 @@
         function addItem(inputId, key) {
             const v = $(inputId).value.trim(); if (!v) return $(inputId).focus();
             if (appState[key].includes(v)) return alert("Nama itu sudah ada di daftar.");
-            appState[key].push(v); $(inputId).value = ""; save(); renderManage();
+            appState[key].push(v); appState.listsTs = Date.now(); $(inputId).value = ""; save(); renderManage();
         }
 
         /* ---------- pengaturan ---------- */
@@ -691,21 +794,8 @@
                 <label class="block text-xs font-semibold text-slate-400" for="bacaHabitSel">Kebiasaan yang dicentang otomatis</label>
                 <select id="bacaHabitSel" class="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-800 text-sm text-white"><option value="">— Jangan centang otomatis —</option>${appState.habitsList.map(n => `<option value="${esc(n)}" ${n === appState.bacaHabit ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
                 <div class="flex flex-wrap gap-2"><button data-baca="${appState.bacaOn ? "off" : "on"}" class="${b} ${appState.bacaOn ? "bg-rose-500/10 text-rose-400" : "bg-indigo-600 text-white"}">${appState.bacaOn ? "Matikan tautan" : "Aktifkan tautan"}</button><button data-baca="resync" class="${b} bg-slate-800 border border-slate-700">Terapkan ulang ke riwayat</button></div>`;
-            $("syncBox").innerHTML = appState.syncOn
-                ? `<p class="text-xs text-slate-300">Status: <b class="text-emerald-400">aktif</b>. Kode Anda:</p><input readonly id="syncCodeView" value="${esc(appState.syncId)}" class="w-full px-3 py-2 rounded-xl border border-slate-800 bg-slate-800 text-xs text-white">
-                   <div class="flex flex-wrap gap-2"><button data-sync="copy" class="${b} bg-slate-800 border border-slate-700">Salin kode</button><button data-sync="pull" class="${b} bg-slate-800 border border-slate-700">Tarik dari cloud</button><button data-sync="off" class="${b} bg-rose-500/10 text-rose-400">Matikan</button></div>`
-                : `<div class="flex flex-wrap gap-2"><button data-sync="on" class="${b} bg-indigo-600 text-white">Aktifkan dengan kode baru</button></div>
-                   <div class="flex gap-2"><input id="syncJoinCode" placeholder="Atau tempel kode dari perangkat lain" aria-label="Kode sinkron" class="flex-1 px-3 py-2 rounded-xl border border-slate-800 bg-slate-800 text-xs text-white"><button data-sync="join" class="${b} bg-slate-800 border border-slate-700">Hubungkan</button></div>`;
+            renderAcc();
         }
-        function newCode() { const a = new Uint8Array(12); crypto.getRandomValues(a); return "jh-" + Array.from(a, x => x.toString(16).padStart(2, "0")).join(""); }
-        async function syncAction(a) {
-            if (a === "on") { if (!db) return alert("Firebase tidak termuat. Periksa koneksi internet."); appState.syncId = newCode(); appState.syncOn = true; save(); renderSettings(); }
-            if (a === "join") { const c = $("syncJoinCode").value.trim(); if (c.length < 12) return alert("Kode tidak valid."); if (!db) return alert("Firebase tidak termuat."); appState.syncId = c; appState.syncOn = true; renderSettings(); await pullCloud(true); }
-            if (a === "pull") await pullCloud(true);
-            if (a === "off") { appState.syncOn = false; save(); renderSettings(); }
-            if (a === "copy") { try { await navigator.clipboard.writeText(appState.syncId); alert("Kode disalin."); } catch (e) { $("syncCodeView").select(); } }
-        }
-
         /* ---------- pasang sebagai aplikasi (PWA) ---------- */
         let deferredInstall = null;
         window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; if (view === "settings") renderPwa(); });
@@ -749,20 +839,22 @@
         }
         /* ---------- event ---------- */
         document.addEventListener("click", e => {
-            const t = e.target.closest("[data-nav],[data-edit],[data-del],[data-sync],[data-baca],[data-quote],[data-qdel],[data-pwa]"); if (!t) return;
+            const t = e.target.closest("[data-nav],[data-edit],[data-del],[data-acc],[data-baca],[data-quote],[data-qdel],[data-pwa]"); if (!t) return;
             const d = t.dataset;
             if (d.nav) { if (d.nav === "today") curDate = TODAY; return go(d.nav); }
             if (d.edit) { curDate = d.edit; return go("today"); }
-            if (d.del) { const key = d.del === "ibadah" ? "ibadahList" : "habitsList"; if (confirm('Hapus "' + d.name + '" dari daftar? Catatan lama tetap tersimpan.')) { appState[key] = appState[key].filter(n => n !== d.name); save(); renderManage(); } return; }
+            if (d.del) { const key = d.del === "ibadah" ? "ibadahList" : "habitsList"; if (confirm('Hapus "' + d.name + '" dari daftar? Catatan lama tetap tersimpan.')) { appState[key] = appState[key].filter(n => n !== d.name); appState.listsTs = Date.now(); save(); renderManage(); } return; }
             if (d.pwa === "install" && deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; renderPwa(); }); return; }
             if (d.quote === "shuffle") return showQuote(true);
             if (d.quote === "add") {
                 const add = $("newQuote").value.split("\n").map(x => x.trim().slice(0, 300)).filter(x => x && !appState.customQuotes.includes(x));
                 if (!add.length) return $("newQuote").focus();
-                appState.customQuotes.push(...new Set(add)); save(); return renderSettings();
+                appState.customQuotes.push(...new Set(add)); appState.listsTs = Date.now(); save(); return renderSettings();
             }
-            if (d.qdel !== undefined) { const q = appState.customQuotes[+d.qdel]; if (q !== undefined && confirm("Hapus kutipan ini dari daftar?")) { appState.customQuotes.splice(+d.qdel, 1); save(); renderSettings(); } return; }
-            if (d.sync) return syncAction(d.sync);
+            if (d.qdel !== undefined) { const q = appState.customQuotes[+d.qdel]; if (q !== undefined && confirm("Hapus kutipan ini dari daftar?")) { appState.customQuotes.splice(+d.qdel, 1); appState.listsTs = Date.now(); save(); renderSettings(); } return; }
+            if (d.acc === "sync") return save();
+            if (d.acc === "out") return doLogout();
+            if (d.acc === "login") { authErr(""); return $("authModal").classList.remove("hidden"); }
             if (d.baca) {
                 if (d.baca === "resync" && !confirm("Centang otomatis akan diterapkan lagi ke semua hari bacaan, termasuk hari yang pernah Anda batalkan. Lanjutkan?")) return;
                 if (d.baca === "on") appState.bacaOn = true; if (d.baca === "off") appState.bacaOn = false;
@@ -772,9 +864,9 @@
         });
         document.addEventListener("change", e => {
             const t = e.target;
-            if (t.dataset.chk) { const e = W(curDate); e[t.dataset.chk][t.dataset.name] = t.checked; if (e.bacaAuto === t.dataset.name) delete e.bacaAuto; save(); } // diubah manual: bukan lagi centang otomatis
-            if (t.id === "inputMoodMorning") { W(curDate).moodMorning = t.value; save(); }
-            if (t.id === "inputMoodNight") { W(curDate).moodNight = t.value; save(); }
+            if (t.dataset.chk) { const e = T(curDate); e[t.dataset.chk][t.dataset.name] = t.checked; if (e.bacaAuto === t.dataset.name) delete e.bacaAuto; save(); } // diubah manual: bukan lagi centang otomatis
+            if (t.id === "inputMoodMorning") { T(curDate).moodMorning = t.value; save(); }
+            if (t.id === "inputMoodNight") { T(curDate).moodNight = t.value; save(); }
             if (t.id === "quoteBuiltinChk") { if (!t.checked && !appState.customQuotes.length) { alert("Tambahkan kutipan sendiri dulu sebelum mematikan kutipan bawaan."); t.checked = true; return; } appState.quoteBuiltin = t.checked; appState.quoteDay = null; save(); renderSettings(); }
             if (t.id === "bacaHabitSel") { appState.bacaHabit = t.value; Object.values(appState.entries).forEach(x => { delete x.bacaApplied; }); save(); bacaStart(); }
             if (t.id === "todayDatePick" && t.value && t.value <= TODAY) { curDate = t.value; renderToday(); }
@@ -782,8 +874,8 @@
         });
         document.addEventListener("input", e => {
             const t = e.target;
-            if (t.id === "inputNiatPagi") { W(curDate).niatPagi = t.value; save(); }
-            if (t.id === "inputSyukur") { W(curDate).syukurTxt = t.value; save(); }
+            if (t.id === "inputNiatPagi") { T(curDate).niatPagi = t.value; save(); }
+            if (t.id === "inputSyukur") { T(curDate).syukurTxt = t.value; save(); }
             if (t.id === "histQ") renderHistory();
         });
         $("btnPrevDay").onclick = () => { curDate = addDays(curDate, -1); renderToday(); };
@@ -801,10 +893,10 @@
             download("jurnal-harian-" + TODAY + ".csv", [head].concat(rows).map(r => r.map(c).join(",")).join("\n"), "text/csv");
         };
         $("btnImport").onclick = () => {
-            try { const o = JSON.parse($("impTxt").value); if (!o || typeof o.entries !== "object" || !Array.isArray(o.ibadahList)) throw 0; if (!confirm("Data saat ini akan diganti dengan data impor. Lanjutkan?")) return; const keep = { syncOn: appState.syncOn, syncId: appState.syncId, bacaOn: appState.bacaOn, bacaHabit: appState.bacaHabit, quoteBuiltin: appState.quoteBuiltin, quoteDay: appState.quoteDay, quoteSeen: appState.quoteSeen }; appState = Object.assign(normalize(o), keep); save(); $("impTxt").value = ""; alert("Data berhasil dipulihkan."); renderSettings(); }
+            try { const o = JSON.parse($("impTxt").value); if (!o || typeof o.entries !== "object" || !Array.isArray(o.ibadahList)) throw 0; if (!confirm("Data saat ini akan diganti dengan data impor. Lanjutkan?")) return; const keep = { owner: appState.owner, bacaOn: appState.bacaOn, bacaHabit: appState.bacaHabit, quoteBuiltin: appState.quoteBuiltin, quoteDay: appState.quoteDay, quoteSeen: appState.quoteSeen }; appState = Object.assign(normalize(o), keep); Object.values(appState.entries).forEach(x => { x.ts = Date.now(); }); appState.listsTs = Date.now(); save(); $("impTxt").value = ""; alert("Data berhasil dipulihkan."); renderSettings(); }
             catch (e) { alert("JSON tidak valid atau formatnya tidak sesuai."); }
         };
-        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, syncOn: false, syncId: "", bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [] }; save(); bacaStart(); go("dashboard"); } };
+        $("btnReset").onclick = () => { if (confirm("Hapus semua catatan dan daftar di perangkat ini? Ini tidak bisa dibatalkan.")) { appState = { ibadahList: [...DEFAULT_IBADAH], habitsList: [...DEFAULT_HABITS], entries: {}, bacaOn: true, bacaHabit: "Membaca Buku", customQuotes: [], quoteBuiltin: true, quoteDay: null, quoteSeen: [], owner: user ? user.uid : "", listsTs: Date.now() }; save(); bacaStart(); go("dashboard"); } };
 
         setStatus("Tersimpan di perangkat");
         go("dashboard");
