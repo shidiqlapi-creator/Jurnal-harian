@@ -782,7 +782,7 @@
 
         /* ---------- kelola ---------- */
         function renderManage() {
-            const row = (n, t) => `<div class="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 border border-slate-800"><span class="text-sm">${esc(n)}</span><button data-del="${t}" data-name="${esc(n)}" aria-label="Hapus ${esc(n)}" class="text-rose-400 px-2"><i class="ph-bold ph-trash"></i></button></div>`;
+            const row = (n, t) => `<div class="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 border border-slate-800"><span class="text-sm">${esc(n)}</span><span class="flex items-center shrink-0"><button data-ren="${t}" data-name="${esc(n)}" aria-label="Ubah nama ${esc(n)}" class="text-indigo-400 px-2"><i class="ph-bold ph-pencil-simple"></i></button><button data-del="${t}" data-name="${esc(n)}" aria-label="Hapus ${esc(n)}" class="text-rose-400 px-2"><i class="ph-bold ph-trash"></i></button></span></div>`;
             $("manageIbadahList").innerHTML = appState.ibadahList.map(n => row(n, "ibadah")).join("") || '<p class="text-xs text-slate-400">Daftar kosong.</p>';
             $("manageHabitsList").innerHTML = appState.habitsList.map(n => row(n, "habits")).join("") || '<p class="text-xs text-slate-400">Daftar kosong.</p>';
         }
@@ -790,6 +790,24 @@
             const v = $(inputId).value.trim(); if (!v) return $(inputId).focus();
             if (appState[key].includes(v)) return alert("Nama itu sudah ada di daftar.");
             appState[key].push(v); appState.listsTs = Date.now(); $(inputId).value = ""; save(); renderManage();
+        }
+
+        // Ubah nama: seluruh riwayat ikut dipindahkan ke nama baru (catatan lama tidak hilang)
+        function renameItem(type, oldName) {
+            const key = type === "ibadah" ? "ibadahList" : "habitsList", field = type === "ibadah" ? "ibadah" : "habits", list = appState[key];
+            const raw = prompt("Ubah nama:", oldName); if (raw === null) return;
+            const nn = raw.trim().slice(0, 80);
+            if (!nn || nn === oldName) return;
+            if (list.includes(nn)) return alert("Nama itu sudah ada di daftar.");
+            list[list.indexOf(oldName)] = nn;
+            Object.keys(appState.entries).forEach(k => {
+                const e = appState.entries[k]; let touched = false;
+                if (e[field] && Object.prototype.hasOwnProperty.call(e[field], oldName)) { e[field][nn] = e[field][oldName]; delete e[field][oldName]; touched = true; }
+                if (type === "habits" && e.bacaAuto === oldName) { e.bacaAuto = nn; touched = true; }
+                if (touched) e.ts = Date.now();
+            });
+            if (type === "habits" && appState.bacaHabit === oldName) appState.bacaHabit = nn;
+            appState.listsTs = Date.now(); save(); renderManage();
         }
 
         /* ---------- pengaturan ---------- */
@@ -859,10 +877,11 @@
         }
         /* ---------- event ---------- */
         document.addEventListener("click", e => {
-            const t = e.target.closest("[data-nav],[data-edit],[data-del],[data-acc],[data-baca],[data-quote],[data-qdel],[data-pwa]"); if (!t) return;
+            const t = e.target.closest("[data-nav],[data-edit],[data-ren],[data-del],[data-acc],[data-baca],[data-quote],[data-qdel],[data-pwa]"); if (!t) return;
             const d = t.dataset;
             if (d.nav) { if (d.nav === "today") curDate = TODAY; return go(d.nav); }
             if (d.edit) { curDate = d.edit; return go("today"); }
+            if (d.ren) return renameItem(d.ren, d.name);
             if (d.del) { const key = d.del === "ibadah" ? "ibadahList" : "habitsList"; if (confirm('Hapus "' + d.name + '" dari daftar? Catatan lama tetap tersimpan.')) { appState[key] = appState[key].filter(n => n !== d.name); appState.listsTs = Date.now(); save(); renderManage(); } return; }
             if (d.pwa === "dismiss") { bannerOff = true; return showBanner(); }
             if (d.pwa === "install" && deferredInstall) { deferredInstall.prompt(); deferredInstall.userChoice.finally(() => { deferredInstall = null; showBanner(); renderPwa(); }); return; }
